@@ -1,35 +1,47 @@
-name: Build .so for glibc 2.17 (CentOS 7)
+name: Build .so on CentOS 7 (glibc 2.17)
 
 on:
+  workflow_dispatch:          # 手动触发
   push:
-    branches: [ main ]
-  workflow_dispatch:  # 允许手动触发
+    branches: [ main ]        # 或者你的主分支名称
 
 jobs:
   build:
     runs-on: ubuntu-latest
     container:
-      image: centos:7  # glibc 2.17
+      image: centos:7
     steps:
-      - name: Install dependencies
+      # 1. 修复 CentOS 7 的 yum 源（指向归档仓库）
+      - name: Fix yum repos
+        run: |
+          sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-*.repo
+          sed -i 's|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-*.repo
+          yum clean all
+          yum makecache
+
+      # 2. 安装编译工具
+      - name: Install build dependencies
         run: |
           yum install -y epel-release
           yum install -y golang git gcc make
 
+      # 3. 检出代码
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # 4. 编译为 .so 共享库
       - name: Build shared library
         run: |
-          # 进入源码目录（根据实际结构调整）
-          cd cmd/agent  # 示例路径，请根据仓库实际情况修改
-          # 编译为 C 共享库
-          CGO_ENABLED=1 go build -buildmode=c-shared -o libnezha.so
-          # 检查 glibc 依赖
-          ldd libnezha.so
+          # 假设项目根目录就是 main 包，直接使用 buildmode=c-shared
+          CGO_ENABLED=1 go build -buildmode=c-shared -o v1-amd64.so .
+          # 查看 glibc 依赖（确认只有 2.17）
+          ldd v1-amd64.so
+          # 查看导出函数
+          nm -D v1-amd64.so | grep -E "Start|Stop"
 
+      # 5. 上传产物
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: nezha-so-amd64-glibc217
-          path: cmd/agent/libnezha.so
+          name: v1-amd64-glibc217
+          path: v1-amd64.so
