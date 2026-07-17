@@ -12,19 +12,26 @@ import (
 	"syscall"
 	"unsafe"
 
-	"github.com/nezhahq/agent/pkg/agent"
+	"github.com/nezhahq/agent/agent"   // 修正导入路径
 )
 
-var (
-	cancelFunc context.CancelFunc
-)
+var cancelFunc context.CancelFunc
 
 //export StartNezhaAgent
 func StartNezhaAgent(configJson *C.char) C.int {
 	configStr := C.GoString(configJson)
 
-	var cfg agent.Config
-	if err := json.Unmarshal([]byte(configStr), &cfg); err != nil {
+	// 解析配置，假设原版脚本传入的是 {"config":"/path/to/config.yaml"}
+	var wrapper struct {
+		Config string `json:"config"`
+	}
+	if err := json.Unmarshal([]byte(configStr), &wrapper); err != nil {
+		return 1
+	}
+
+	// 从 YAML 文件加载 agent.Config（需要 gopkg.in/yaml.v3 已存在）
+	cfg, err := agent.LoadConfig(wrapper.Config)
+	if err != nil {
 		return 1
 	}
 
@@ -39,7 +46,7 @@ func StartNezhaAgent(configJson *C.char) C.int {
 	}()
 
 	go func() {
-		agent.Run(ctx, &cfg)
+		agent.Run(ctx, cfg)
 	}()
 
 	return 0
