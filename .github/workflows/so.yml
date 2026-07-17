@@ -19,7 +19,7 @@ jobs:
             bash -c '
               set -e
 
-              # 修复 yum 源
+              # 修复 CentOS 7 yum 源
               sed -i "s/mirrorlist/#mirrorlist/g" /etc/yum.repos.d/CentOS-*.repo
               sed -i "s|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g" /etc/yum.repos.d/CentOS-*.repo
               yum clean all && yum makecache
@@ -27,19 +27,17 @@ jobs:
               # 安装编译工具
               yum install -y gcc make git
 
-              # 安装 Go 1.21.13（手动下载）
-              curl -fsSL https://go.dev/dl/go1.21.13.linux-amd64.tar.gz -o go.tar.gz
+              # 安装 Go 1.26.0（官方二进制不依赖 glibc）
+              curl -fsSL https://go.dev/dl/go1.26.0.linux-amd64.tar.gz -o go.tar.gz
               tar -C /usr/local -xzf go.tar.gz
               export PATH=/usr/local/go/bin:$PATH
-
-              # 禁止自动下载更高版本 Go
               export GOTOOLCHAIN=local
               go version
 
               # 进入 agent 主目录
               cd /workspace/cmd/agent
 
-              # 跳过 go mod tidy，直接编译
+              # 编译为 C 共享库
               CGO_ENABLED=1 go build -buildmode=c-shared -o /workspace/v1-amd64.so .
 
               echo "===== glibc 依赖检查 ====="
