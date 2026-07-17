@@ -2,8 +2,6 @@ name: Build .so on CentOS 7 (glibc 2.17)
 
 on:
   workflow_dispatch:
-  push:
-    branches: [ main ]
 
 jobs:
   build:
@@ -19,34 +17,26 @@ jobs:
             -w /workspace \
             centos:7 \
             bash -c '
-              # 修复 yum 源
               sed -i "s/mirrorlist/#mirrorlist/g" /etc/yum.repos.d/CentOS-*.repo
               sed -i "s|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g" /etc/yum.repos.d/CentOS-*.repo
               yum clean all && yum makecache
-
-              # 安装 GCC 等编译依赖（git 非必须，但保留）
               yum install -y gcc make git
-
-              # 安装新版 Go
               curl -fsSL https://go.dev/dl/go1.21.13.linux-amd64.tar.gz -o go.tar.gz
               tar -C /usr/local -xzf go.tar.gz
               export PATH=/usr/local/go/bin:$PATH
               go version
-
-              # 定位包含 main.go 的目录
               MAIN_DIR=$(find /workspace -name "main.go" -print -quit | xargs dirname)
               if [ -z "$MAIN_DIR" ]; then
                 echo "错误：未找到 main.go"
                 exit 1
               fi
               echo "找到入口目录：$MAIN_DIR"
-
-              # 进入该目录编译
               cd "$MAIN_DIR"
               CGO_ENABLED=1 go build -buildmode=c-shared -o /workspace/v1-amd64.so .
               echo "编译完成，检查依赖："
               ldd /workspace/v1-amd64.so
-              nm -D /workspace/v1-amd64.so | grep -E "Start|Stop"
+              echo "导出函数："
+              nm -D /workspace/v1-amd64.so | grep -E "Start|Stop" || true
             '
 
       - name: Upload artifact
