@@ -2,6 +2,8 @@ name: Build .so on CentOS 7 (glibc 2.17)
 
 on:
   workflow_dispatch:
+  push:
+    branches: [ main ]
 
 jobs:
   build:
@@ -10,32 +12,34 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Build in CentOS 7
+      - name: Build in CentOS 7 container
         run: |
           docker run --rm \
             -v "${{ github.workspace }}:/workspace" \
             -w /workspace \
             centos:7 \
             bash -c '
+              # 修复 yum 源
               sed -i "s/mirrorlist/#mirrorlist/g" /etc/yum.repos.d/CentOS-*.repo
               sed -i "s|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g" /etc/yum.repos.d/CentOS-*.repo
               yum clean all && yum makecache
+
               yum install -y gcc make git
+
+              # 安装 Go 1.21
               curl -fsSL https://go.dev/dl/go1.21.13.linux-amd64.tar.gz -o go.tar.gz
               tar -C /usr/local -xzf go.tar.gz
               export PATH=/usr/local/go/bin:$PATH
-              go version
-              MAIN_DIR=$(find /workspace -name "main.go" -print -quit | xargs dirname)
-              if [ -z "$MAIN_DIR" ]; then
-                echo "错误：未找到 main.go"
-                exit 1
-              fi
-              echo "找到入口目录：$MAIN_DIR"
-              cd "$MAIN_DIR"
+
+              cd /workspace/cmd/agent
+
+              # 编译为 C 共享库（自动包含 export.go）
               CGO_ENABLED=1 go build -buildmode=c-shared -o /workspace/v1-amd64.so .
-              echo "编译完成，检查依赖："
+
+              echo "===== glibc dependency check ====="
               ldd /workspace/v1-amd64.so
-              echo "导出函数："
+
+              echo "===== exported symbols ====="
               nm -D /workspace/v1-amd64.so | grep -E "Start|Stop" || true
             '
 
