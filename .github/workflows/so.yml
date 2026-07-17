@@ -1,0 +1,35 @@
+name: Build .so for glibc 2.17 (CentOS 7)
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:  # 允许手动触发
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: centos:7  # glibc 2.17
+    steps:
+      - name: Install dependencies
+        run: |
+          yum install -y epel-release
+          yum install -y golang git gcc make
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build shared library
+        run: |
+          # 进入源码目录（根据实际结构调整）
+          cd cmd/agent  # 示例路径，请根据仓库实际情况修改
+          # 编译为 C 共享库
+          CGO_ENABLED=1 go build -buildmode=c-shared -o libnezha.so
+          # 检查 glibc 依赖
+          ldd libnezha.so
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nezha-so-amd64-glibc217
+          path: cmd/agent/libnezha.so
