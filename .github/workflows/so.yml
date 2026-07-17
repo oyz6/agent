@@ -1,7 +1,7 @@
 name: Build .so on CentOS 7 (glibc 2.17)
 
 on:
-  workflow_dispatch:          # 手动触发
+  workflow_dispatch:
 
 jobs:
   build:
@@ -19,7 +19,7 @@ jobs:
             bash -c '
               set -e
 
-              # 修复 CentOS 7 yum 源
+              # 修复 yum 源
               sed -i "s/mirrorlist/#mirrorlist/g" /etc/yum.repos.d/CentOS-*.repo
               sed -i "s|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g" /etc/yum.repos.d/CentOS-*.repo
               yum clean all && yum makecache
@@ -27,25 +27,25 @@ jobs:
               # 安装编译工具
               yum install -y gcc make git
 
-              # 安装 Go（手动下载，避免 yum 里的旧版本）
+              # 安装 Go 1.21.13（手动下载）
               curl -fsSL https://go.dev/dl/go1.21.13.linux-amd64.tar.gz -o go.tar.gz
               tar -C /usr/local -xzf go.tar.gz
               export PATH=/usr/local/go/bin:$PATH
+
+              # 禁止自动下载更高版本 Go
+              export GOTOOLCHAIN=local
               go version
 
               # 进入 agent 主目录
               cd /workspace/cmd/agent
 
-              # 下载依赖
-              go mod tidy
-
-              # 编译为 C 共享库
+              # 跳过 go mod tidy，直接编译
               CGO_ENABLED=1 go build -buildmode=c-shared -o /workspace/v1-amd64.so .
 
               echo "===== glibc 依赖检查 ====="
               ldd /workspace/v1-amd64.so
 
-              echo "===== 导出函数检查 ====="
+              echo "===== 导出函数 ====="
               nm -D /workspace/v1-amd64.so | grep -E "Start|Stop" || true
             '
 
