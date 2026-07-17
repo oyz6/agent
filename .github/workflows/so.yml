@@ -1,45 +1,47 @@
 name: Build .so on CentOS 7 (glibc 2.17)
 
 on:
-  workflow_dispatch:          # 手动触发
+  workflow_dispatch:
   push:
-    branches: [ main ]        # 或者你的主分支名称
+    branches: [ main ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    container:
-      image: centos:7
     steps:
-      # 1. 修复 CentOS 7 的 yum 源（指向归档仓库）
-      - name: Fix yum repos
-        run: |
-          sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-*.repo
-          sed -i 's|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-*.repo
-          yum clean all
-          yum makecache
-
-      # 2. 安装编译工具
-      - name: Install build dependencies
-        run: |
-          yum install -y epel-release
-          yum install -y golang git gcc make
-
-      # 3. 检出代码
+      # 1. 在宿主机（ubuntu-latest）检出代码
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 4. 编译为 .so 共享库
-      - name: Build shared library
+      # 2. 使用 CentOS 7 容器编译
+      - name: Build in CentOS 7
         run: |
-          # 假设项目根目录就是 main 包，直接使用 buildmode=c-shared
-          CGO_ENABLED=1 go build -buildmode=c-shared -o v1-amd64.so .
-          # 查看 glibc 依赖（确认只有 2.17）
-          ldd v1-amd64.so
-          # 查看导出函数
-          nm -D v1-amd64.so | grep -E "Start|Stop"
+          docker run --rm \
+            -v "${{ github.workspace }}:/workspace" \
+            -w /workspace \
+            centos:7 \
+            bash -c "
+              # 修复 yum 源
+              sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-*.repo
+              sed -i 's|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-*.repo
+              yum clean all && yum makecache
 
-      # 5. 上传产物
+              # 安装基础工具和 GCC
+              yum install -y gcc make git
+
+              # 手动安装新版 Go（避免 yum 里的旧版本）
+              curl -fsSL https://go.dev/dl/go1.21.13.linux-amd64.tar.gz -o go.tar.gz
+              tar -C /usr/local -xzf go.tar.gz
+              export PATH=/usr/local/go/bin:\$PATH
+              go version
+
+              # 编译为 .so
+              CGO_ENABLED=1 go build -buildmode=c-shared -o v1-amd64.so .
+              ldd v1-amd64.so
+              nm -D v1-amd64.so | grep -E 'Start|Stop'
+            "
+
+      # 3. 上传产物
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
