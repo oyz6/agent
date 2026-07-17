@@ -6,6 +6,7 @@ package main
 import "C"
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"sync"
 	"time"
@@ -15,6 +16,8 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"github.com/nezhahq/agent/model"
+	"github.com/nezhahq/agent/pkg/monitor"
 	pb "github.com/nezhahq/agent/proto"
 )
 
@@ -22,7 +25,7 @@ var (
 	agentCtx    context.Context
 	agentCancel context.CancelFunc
 	agentWG     sync.WaitGroup
-	agentConn   *grpc.ClientConn // 持有当前 gRPC 连接，用于优雅关闭
+	agentConn   *grpc.ClientConn // 用于优雅关闭连接
 )
 
 //export StartNezhaAgent
@@ -66,13 +69,13 @@ func StopNezhaAgent() C.int {
 func runWithContext(ctx context.Context) {
 	publishCredentials(agentConfig)
 
-	// 检查更新（默认已禁用自动更新，此处仅保留逻辑一致性）
+	// 检查更新（默认禁用自动更新，保留逻辑）
 	if _, err := semver.Parse(version); err == nil && !agentConfig.DisableAutoUpdate {
 		if doSelfUpdate(true) {
 			return
 		}
 		go func() {
-			// 定期更新 goroutine 省略，因为默认配置已禁用
+			// 定期更新 goroutine 省略（默认禁用）
 		}()
 	}
 
@@ -98,7 +101,7 @@ func runWithContext(ctx context.Context) {
 		default:
 		}
 
-		// 每次重连重建 auth，保证凭据最新
+		// 每次重连重建认证信息
 		auth := model.AuthHandler{
 			Credentials: func() (string, string) {
 				c := loadCredentials()
@@ -112,9 +115,14 @@ func runWithContext(ctx context.Context) {
 		var securityOption grpc.DialOption
 		if agentConfig.TLS {
 			if agentConfig.InsecureTLS {
-				securityOption = grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{MinVersion: tls.VersionTLS12, InsecureSkipVerify: true}))
+				securityOption = grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{
+					MinVersion:         tls.VersionTLS12,
+					InsecureSkipVerify: true,
+				}))
 			} else {
-				securityOption = grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{MinVersion: tls.VersionTLS12}))
+				securityOption = grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{
+					MinVersion: tls.VersionTLS12,
+				}))
 			}
 		} else {
 			securityOption = grpc.WithTransportCredentials(insecure.NewCredentials())
@@ -129,7 +137,7 @@ func runWithContext(ctx context.Context) {
 			}
 			continue
 		}
-		agentConn = conn // 保存以便 Stop 时关闭
+		agentConn = conn
 		client = pb.NewNezhaServiceClient(conn)
 		printf("Connection to %s established", agentConfig.Server)
 
